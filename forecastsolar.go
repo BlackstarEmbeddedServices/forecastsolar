@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -183,15 +184,15 @@ func planesForLimit(limit int) int {
 // Estimate fetches the weather-adjusted production forecast (/estimate) for lat/lon across all
 // planes, batching ⌈len(planes)/PlanesPerCall⌉ calls and summing per-timestamp. It returns the
 // merged points sorted by time and a Meta describing the calls made and the server rate limit.
-func (c *Client) Estimate(ctx context.Context, lat, lon float64, planes []Plane) ([]Point, Meta, error) {
-	return c.fetch(ctx, "estimate", lat, lon, planes)
+func (c *Client) Estimate(ctx context.Context, lat, lon float64, planes []Plane, opts ...Option) ([]Point, Meta, error) {
+	return c.fetch(ctx, "estimate", lat, lon, planes, opts...)
 }
 
 // ClearSky fetches the clear-sky ceiling (/clearsky) — the theoretical no-cloud array potential,
 // NOT inverter-capped — for lat/lon across all planes. Same batching/summing/accounting as
 // Estimate; the ceiling lands in Point.Watts.
-func (c *Client) ClearSky(ctx context.Context, lat, lon float64, planes []Plane) ([]Point, Meta, error) {
-	return c.fetch(ctx, "clearsky", lat, lon, planes)
+func (c *Client) ClearSky(ctx context.Context, lat, lon float64, planes []Plane, opts ...Option) ([]Point, Meta, error) {
+	return c.fetch(ctx, "clearsky", lat, lon, planes, opts...)
 }
 
 // Historic fetches the historic-average production forecast (the API's /history route) — a forward
@@ -199,14 +200,15 @@ func (c *Client) ClearSky(ctx context.Context, lat, lon float64, planes []Plane)
 // the "typical" expected production for the days ahead. Same route pattern, batching, summing, and
 // ResponseFull shape as Estimate; the values land in Point.Watts / Point.WhPeriod. Paid tiers only —
 // the keyless public tier returns an error ("'history' is not available with a 'Public' subscription").
-func (c *Client) Historic(ctx context.Context, lat, lon float64, planes []Plane) ([]Point, Meta, error) {
-	return c.fetch(ctx, "history", lat, lon, planes)
+func (c *Client) Historic(ctx context.Context, lat, lon float64, planes []Plane, opts ...Option) ([]Point, Meta, error) {
+	return c.fetch(ctx, "history", lat, lon, planes, opts...)
 }
 
-func (c *Client) fetch(ctx context.Context, endpoint string, lat, lon float64, planes []Plane) ([]Point, Meta, error) {
+func (c *Client) fetch(ctx context.Context, endpoint string, lat, lon float64, planes []Plane, opts ...Option) ([]Point, Meta, error) {
 	if len(planes) == 0 {
 		return nil, Meta{}, fmt.Errorf("forecastsolar: no planes")
 	}
+	ro := newReqOpts(opts)
 	// Honour an active 429 self-pause before spending any call.
 	c.mu.Lock()
 	if now := time.Now(); now.Before(c.pauseUntil) {
@@ -224,6 +226,12 @@ func (c *Client) fetch(ctx context.Context, endpoint string, lat, lon float64, p
 	}
 
 	per := c.PlanesPerCall()
+
+	// An output-capping modifier (inverter/actual) is applied by the API to the summed planes of ONE
+	// request; splitting across batches and summing would multiply the cap. Refuse rather than mislead.
+	if ro.capsOutput && len(planes) > per {
+		return nil, Meta{}, fmt.Errorf("forecastsolar: inverter/actual caps the summed output per request, but %d planes exceed %d planes-per-call (would split across batches)", len(planes), per)
+	}
 
 	sum := map[int64]*Point{}
 	var meta Meta
@@ -245,7 +253,7 @@ func (c *Client) fetch(ctx context.Context, endpoint string, lat, lon float64, p
 		batch := planes[start:min(start+per, len(planes))]
 		meta.Calls++
 		c.recordCall()
-		pts, rl, tz, err := c.fetchBatch(ctx, endpoint, lat, lon, batch)
+		pts, rl, tz, err := c.fetchBatch(ctx, endpoint, lat, lon, batch, ro.query)
 		if rl.Limit > 0 || !rl.RetryAt.IsZero() {
 			meta.RateLimit = rl
 		}
@@ -286,7 +294,7 @@ func (c *Client) fetch(ctx context.Context, endpoint string, lat, lon float64, p
 // fetchBatch performs one upstream GET for up to PlanesPerCall planes and parses it. On HTTP 429
 // it records the retry-at self-pause and returns *RateLimited. rl/tz are returned even on error
 // (a 4xx/5xx body may still carry ratelimit info).
-func (c *Client) fetchBatch(ctx context.Context, endpoint string, lat, lon float64, batch []Plane) ([]Point, RateLimit, string, error) {
+func (c *Client) fetchBatch(ctx context.Context, endpoint string, lat, lon float64, batch []Plane, extra url.Values) ([]Point, RateLimit, string, error) {
 	var b strings.Builder
 	b.WriteString(c.baseURL())
 	if c.Key != "" {
@@ -297,7 +305,13 @@ func (c *Client) fetchBatch(ctx context.Context, endpoint string, lat, lon float
 	for _, p := range batch {
 		fmt.Fprintf(&b, "/%s/%s/%s", num(p.Dec), num(p.Az), num(p.Kwp))
 	}
-	b.WriteString("?time=seconds") // epoch timestamp keys (unambiguous, tz-independent)
+	// epoch timestamp keys (unambiguous, tz-independent) plus any per-request modifier params.
+	q := url.Values{"time": {"seconds"}}
+	for k, vs := range extra {
+		q[k] = vs
+	}
+	b.WriteByte('?')
+	b.WriteString(q.Encode())
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.String(), nil)
 	if err != nil {

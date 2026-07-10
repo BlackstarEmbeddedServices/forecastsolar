@@ -13,6 +13,9 @@ forecast.solar don't each re-implement (and mis-implement) them:
   first fetch — authoritative, incl. exact plan name (`account`, so `Enterprise` is identifiable) and
   subscription expiry (`until`). Falls back to inferring from the rate-limit `limit` when `/info` is
   unavailable. Keyless (free public tier) uses the limit inference.
+- **Optional per-call modifiers** (functional options, all default off): `WithInverterKW`, `WithActualW`
+  (both cap/adjust the *summed* output per request → guarded against multi-plane batch splits),
+  `WithResolution`, `WithDamping`, `WithHorizon`, and a `WithParam` escape hatch.
 - Optional per-client `MaxCallsPerHour` limiter, deterministic `Jitter`, and a NOAA `SunUp` helper.
 - **Secret hygiene**: the API key lives in the URL path, so the client redacts it from returned
   errors and the retained `/info` body.
