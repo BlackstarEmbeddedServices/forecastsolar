@@ -31,6 +31,30 @@ func TestClearSkyEndpoint(t *testing.T) {
 	}
 }
 
+func TestHistoricEndpoint(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		fmt.Fprint(w, estimateBody(sumKwp(r.URL.Path), 300, 250))
+	}))
+	defer srv.Close()
+
+	c := &Client{Key: "K", BaseURL: srv.URL, SkipPlanDetect: true}
+	pts, meta, err := c.Historic(context.Background(), 52, 5, []Plane{{Kwp: 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(gotPath, "/K/history/") {
+		t.Errorf("historic URL = %q, want /K/history/...", gotPath)
+	}
+	if pts[0].Watts != 300 { // kwp 3 * 100
+		t.Errorf("historic watts = %v, want 300", pts[0].Watts)
+	}
+	if meta.RateLimit.Limit != 300 {
+		t.Errorf("meta limit = %d, want 300", meta.RateLimit.Limit)
+	}
+}
+
 func TestJitterDeterministicInRange(t *testing.T) {
 	const max = 15 * time.Minute
 	a := Jitter("install-42", max)

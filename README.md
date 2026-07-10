@@ -6,6 +6,8 @@ forecast.solar don't each re-implement (and mis-implement) them:
 
 - **429 `retry-at` self-pause** (typed `*RateLimited`) with a minimum backoff floor — no "infinite 429 loop".
 - `Accept` / `User-Agent` headers, `?time=seconds` epoch timestamps.
+- **Endpoints**: `Estimate` (live weather), `ClearSky` (no-cloud ceiling), `Historic` (`/history` —
+  historic-average "typical" production, paid tiers only), and `KeyInfo` (`/info`).
 - **Multi-plane batching** into `⌈planes / planes-per-call⌉` requests, summed per timestamp.
 - **Planes-per-call detection**: a keyed client lazily reads `/{key}/info` (`result.strings`) on its
   first fetch — authoritative, incl. exact plan name (`account`, so `Enterprise` is identifiable) and

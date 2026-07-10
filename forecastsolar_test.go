@@ -35,10 +35,10 @@ func estimateBody(kwpSum float64, limit, remaining int) string {
 func sumKwp(path string) float64 {
 	// path .../estimate/lat/lon/dec/az/kwp[/dec/az/kwp...] — sum every 3rd segment starting at kwp.
 	segs := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	// find "estimate" or "clearsky"
+	// find the endpoint segment (estimate | clearsky | history)
 	i := 0
 	for ; i < len(segs); i++ {
-		if segs[i] == "estimate" || segs[i] == "clearsky" {
+		if segs[i] == "estimate" || segs[i] == "clearsky" || segs[i] == "history" {
 			break
 		}
 	}

@@ -194,6 +194,15 @@ func (c *Client) ClearSky(ctx context.Context, lat, lon float64, planes []Plane)
 	return c.fetch(ctx, "clearsky", lat, lon, planes)
 }
 
+// Historic fetches the historic-average production forecast (the API's /history route) — a forward
+// 2–7 day forecast computed from long-term/climatological weather rather than the live forecast, i.e.
+// the "typical" expected production for the days ahead. Same route pattern, batching, summing, and
+// ResponseFull shape as Estimate; the values land in Point.Watts / Point.WhPeriod. Paid tiers only —
+// the keyless public tier returns an error ("'history' is not available with a 'Public' subscription").
+func (c *Client) Historic(ctx context.Context, lat, lon float64, planes []Plane) ([]Point, Meta, error) {
+	return c.fetch(ctx, "history", lat, lon, planes)
+}
+
 func (c *Client) fetch(ctx context.Context, endpoint string, lat, lon float64, planes []Plane) ([]Point, Meta, error) {
 	if len(planes) == 0 {
 		return nil, Meta{}, fmt.Errorf("forecastsolar: no planes")
