@@ -58,9 +58,18 @@ func WithDamping(morning, evening float64) Option {
 	}
 }
 
-// WithHorizon applies a shading horizon (`horizon`) as a comma-separated list of horizon elevation
-// degrees around the compass (the API rejects non-numeric values such as "auto"). Batching-safe (the
-// same horizon applies to every plane). Example: WithHorizon("0,10,20,30,20,10,0,0,0,0,0,0").
+// WithHorizon applies a shading horizon (`horizon`): a comma-separated list of obstruction elevation
+// angles in degrees (0 = flat, no obstruction). The values are spread evenly around the full compass,
+// so N values give 360/N° per sector. It clips the DIRECT beam when the sun is below the given angle
+// at that bearing; diffuse light still contributes, so shaded hours dip rather than vanish. The API
+// rejects non-numeric values such as "auto". Batching-safe (one horizon per location, applied to
+// every plane).
+//
+// Bearing convention (verified empirically — forecast.solar does not document it): index 0 is due
+// NORTH and the list runs CLOCKWISE. For a 12-value list: idx0=N(0°), idx3=E(90°), idx6=S(180°),
+// idx9=W(270°). NOTE this differs from the plane-azimuth convention (Plane.Az is 0=South, -90=East,
+// +90=West) — the horizon zero is North, the azimuth zero is South. Example (obstruction low in the
+// east, clipping the morning): WithHorizon("0,0,0,25,20,10,0,0,0,0,0,0").
 func WithHorizon(csvDegrees string) Option {
 	return func(o *reqOpts) { o.query.Set("horizon", csvDegrees) }
 }
